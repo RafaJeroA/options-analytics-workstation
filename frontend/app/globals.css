@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  --background: #05070b;
+  --background-elevated: #0a1019;
+  --panel: rgba(10, 16, 25, 0.92);
+  --panel-strong: rgba(15, 24, 36, 0.98);
+  --panel-hover: rgba(29, 43, 62, 0.96);
+  --panel-border: rgba(109, 129, 154, 0.24);
+  --foreground: #edf2f7;
+  --muted-foreground: #8ea0b8;
+  --accent: #6ee7b7;
+  --accent-muted: #3bbf93;
+  --accent-foreground: #04140f;
+  --positive: #50e3a4;
+  --negative: #ff6a75;
+  --warning: #ffcf6b;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-color: rgba(109, 129, 154, 0.45) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(109, 129, 154, 0.45);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(110, 231, 183, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(77, 149, 255, 0.1), transparent 22%),
+    linear-gradient(180deg, var(--background-elevated), var(--background));
+  color: var(--foreground);
+}
+
+body {
+  font-feature-settings: "tnum" 1, "cv05" 1;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(110, 231, 183, 0.24);
+  color: var(--foreground);
+}
+
+.panel-surface {
+  border: 1px solid var(--panel-border);
+  background: linear-gradient(180deg, var(--panel), var(--panel-strong));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+}
+
+.metric-label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.metric-value {
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.number-positive {
+  color: var(--positive);
+}
+
+.number-negative {
+  color: var(--negative);
+}
+
+.table-scroll {
+  scrollbar-color: rgba(109, 129, 154, 0.4) transparent;
+}

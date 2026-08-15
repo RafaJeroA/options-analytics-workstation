@@ -1,0 +1,65 @@
+name: Backend
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      MODELLATOR_DATA_MODE: mock
+      MODELLATOR_DATABASE_PATH: /tmp/options-analytics-workstation-ci.db
+      MODELLATOR_IBKR_READONLY_SMOKE: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Check tracked artifacts and secrets
+        working-directory: .
+        run: python scripts/check_repository_hygiene.py --tracked
+      - name: Install backend and development gates
+        run: python -m pip install -e ".[dev]"
+      - name: Verify base install excludes external IBKR client
+        run: python -c "import importlib.util; assert importlib.util.find_spec('ibapi') is None"
+      - name: Ruff lint
+        run: python -m ruff check --no-cache .
+      - name: Ruff format
+        run: python -m ruff format --check --no-cache .
+      - name: Test deterministic suite
+        run: python -m pytest -m "not ibkr_live" -q
+      - name: Build distribution
+        run: python -m build
+      - name: Inspect wheel
+        shell: bash
+        run: |
+          wheel_path=$(find dist -maxdepth 1 -name '*.whl' -print -quit)
+          python scripts/verify_wheel.py "$wheel_path"
+      - name: Install wheel in clean environment and smoke test API
+        shell: bash
+        run: |
+          wheel_path=$(find dist -maxdepth 1 -name '*.whl' -print -quit)
+          python -m venv "${RUNNER_TEMP}/wheel-venv"
+          "${RUNNER_TEMP}/wheel-venv/bin/python" -m pip install "$wheel_path"
+          "${RUNNER_TEMP}/wheel-venv/bin/python" - <<'PY'
+          from fastapi.testclient import TestClient
+          from app.api import router
+          from app.main import create_app
+          from app.models import market
+          from app.quant import strategy
+          from app.services import market_service
+
+          response = TestClient(create_app()).get("/health")
+          assert response.status_code == 200, response.text
+          assert response.json()["data_mode"] == "mock"
+          PY

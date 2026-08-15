@@ -1,0 +1,109 @@
+[
+  {
+    "name": "complete_quote",
+    "patch": {},
+    "expected_mode": "live",
+    "expected_mark": 5.2,
+    "expected_flags_absent": ["missing_bid", "missing_ask", "unusable_mark"]
+  },
+  {
+    "name": "delayed_quote",
+    "patch": {"market_data_mode": "delayed", "is_delayed": true},
+    "expected_mode": "delayed",
+    "expected_mark": 5.2,
+    "expected_flags_present": ["delayed", "reference_only"]
+  },
+  {
+    "name": "frozen_quote",
+    "patch": {"market_data_mode": "frozen", "is_delayed": false},
+    "expected_mode": "frozen",
+    "expected_mark": 5.2,
+    "expected_flags_present": ["frozen", "reference_only"]
+  },
+  {
+    "name": "delayed_frozen_quote",
+    "patch": {"market_data_mode": "delayed_frozen", "is_delayed": true},
+    "expected_mode": "delayed_frozen",
+    "expected_mark": 5.2,
+    "expected_flags_present": ["delayed", "frozen", "reference_only"]
+  },
+  {
+    "name": "missing_subscription",
+    "patch": {
+      "bid": null,
+      "ask": null,
+      "last": null,
+      "market_data_unavailable": true,
+      "subscription_missing": true
+    },
+    "expected_mode": "live",
+    "expected_mark": null,
+    "expected_flags_present": [
+      "missing_bid",
+      "missing_ask",
+      "market_data_unavailable",
+      "subscription_missing",
+      "unusable_mark"
+    ]
+  },
+  {
+    "name": "absent_bid",
+    "patch": {"bid": null},
+    "expected_mode": "live",
+    "expected_mark": null,
+    "expected_flags_present": ["missing_bid", "unusable_mark"]
+  },
+  {
+    "name": "absent_ask",
+    "patch": {"ask": null},
+    "expected_mode": "live",
+    "expected_mark": null,
+    "expected_flags_present": ["missing_ask", "unusable_mark"]
+  },
+  {
+    "name": "missing_last",
+    "patch": {"last": null},
+    "expected_mode": "live",
+    "expected_mark": 5.2,
+    "expected_flags_absent": ["unusable_mark"]
+  },
+  {
+    "name": "partial_broker_iv",
+    "patch": {
+      "broker_implied_vol": 0.24,
+      "broker_model_price": null,
+      "broker_greeks": null
+    },
+    "expected_mode": "live",
+    "expected_mark": 5.2,
+    "expected_flags_present": ["missing_broker_model", "local_greeks"]
+  },
+  {
+    "name": "partial_greeks",
+    "patch": {
+      "broker_implied_vol": 0.24,
+      "broker_model_price": 5.21,
+      "broker_greeks": {"delta": 0.52, "gamma": 0.04}
+    },
+    "expected_mode": "live",
+    "expected_mark": 5.2,
+    "expected_flags_present": ["missing_broker_model", "local_greeks"]
+  },
+  {
+    "name": "crossed_market",
+    "patch": {"bid": 5.4, "ask": 5.1},
+    "expected_mode": "live",
+    "expected_mark": null,
+    "expected_flags_present": ["crossed_market", "unusable_mark"]
+  },
+  {
+    "name": "stale_exchange_timestamp",
+    "patch": {
+      "timestamp": "2026-07-31T14:00:00+00:00",
+      "exchange_timestamp": "2026-07-31T14:00:00+00:00"
+    },
+    "expected_mode": "live",
+    "expected_mark": 5.2,
+    "expected_flags_present": ["stale"]
+  }
+]

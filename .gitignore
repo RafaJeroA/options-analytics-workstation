@@ -1,0 +1,40 @@
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+venv/
+
+# JavaScript and frontend builds
+node_modules/
+.next/
+frontend/.turbo/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
+# Build and test outputs
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local application data
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+local_backups/
+screenshots/private/
+evidence/private/
