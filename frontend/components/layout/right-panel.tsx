@@ -16,7 +16,7 @@ import {
   formatQuoteSource,
   formatSignedNumber,
 } from "@/lib/format";
-import { getStagedOptionEntryPrice } from "@/lib/strategy-pricing";
+import { getStagedOptionEntryPrice, payoffExplanation } from "@/lib/strategy-pricing";
 import type { OptionQuote, PricingAssumptions, StrategyValuation, UnderlyingQuote } from "@/lib/types";
 
 interface RightPanelProps {
@@ -30,6 +30,7 @@ interface RightPanelProps {
   onUpdateAssumptions: (partial: Partial<PricingAssumptions>) => void;
   onAddSelectedLong: () => void;
   onAddSelectedShort: () => void;
+  payoffUnavailableReason?: string;
 }
 
 export function RightPanel({
@@ -43,11 +44,13 @@ export function RightPanel({
   onUpdateAssumptions,
   onAddSelectedLong,
   onAddSelectedShort,
+  payoffUnavailableReason,
 }: RightPanelProps) {
   const maxProfitLabel = valuation
     ? formatPayoffMetric(valuation.max_profit, valuation.max_profit_state)
     : "--";
   const maxLossLabel = valuation ? formatPayoffMetric(valuation.max_loss, valuation.max_loss_state) : "--";
+  const explanation = payoffExplanation(valuation, payoffUnavailableReason);
   const canStageSelected = getStagedOptionEntryPrice(selectedContract) !== undefined;
 
   function updateFiniteAssumption(field: keyof PricingAssumptions, value: number, minimum?: number) {
@@ -225,9 +228,9 @@ export function RightPanel({
                 <span className="metric-label">Max Loss</span>
                 <span>{maxLossLabel}</span>
               </div>
-              {valuation.status_message ? (
+              {explanation ? (
                 <div className="mt-2 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-3 text-xs text-[var(--muted-foreground)]">
-                  {valuation.status_message}
+                  {explanation}
                 </div>
               ) : null}
             </>

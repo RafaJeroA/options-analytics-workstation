@@ -9,6 +9,10 @@ from app.quant.black_scholes import intrinsic_value
 
 PAYOFF_VALUE_TOLERANCE = 1e-8
 BREAKEVEN_SPOT_TOLERANCE = 1e-7
+EXACT_PAYOFF_UNAVAILABLE_REASON = (
+    "Exact single-spot expiry payoff, global bounds, and breakevens are unavailable for multiple "
+    "option expirations because settlement spots can differ."
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,20 @@ class ExpiryPayoffAnalysis:
     max_loss_state: PayoffMetricState
     breakevens: tuple[float, ...]
     zero_payoff_intervals: tuple[ZeroPayoffInterval, ...]
+
+
+def has_multiple_option_expirations(strategy: StrategyDefinition) -> bool:
+    expirations = {
+        leg.contract.expiration
+        for leg in strategy.legs
+        if leg.instrument_type == InstrumentType.OPTION and leg.contract is not None
+    }
+    return len(expirations) > 1
+
+
+def ensure_single_option_expiration(strategy: StrategyDefinition) -> None:
+    if has_multiple_option_expirations(strategy):
+        raise ValueError(EXACT_PAYOFF_UNAVAILABLE_REASON)
 
 
 def _signed_quantity(leg: StrategyLeg) -> int:
@@ -47,6 +65,7 @@ def _stock_basis(strategy: StrategyDefinition, leg: StrategyLeg) -> float:
 
 
 def payoff_at_expiry(strategy: StrategyDefinition, spot: float) -> float:
+    ensure_single_option_expiration(strategy)
     if not isfinite(spot) or spot < 0.0:
         raise ValueError("Expiry payoff requires a finite spot greater than or equal to zero")
 
@@ -99,6 +118,7 @@ def _inside_zero_interval(root: float, interval: ZeroPayoffInterval) -> bool:
 
 
 def analyze_expiry_payoff(strategy: StrategyDefinition) -> ExpiryPayoffAnalysis:
+    ensure_single_option_expiration(strategy)
     strikes = sorted(
         {
             float(leg.contract.strike)

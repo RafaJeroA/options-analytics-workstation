@@ -86,3 +86,4 @@ class ScenarioGridResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     volatility_shift_effective: bool | None = None
     day_states: list[ScenarioDayState] = Field(default_factory=list)
+    conditional_settlement: bool = False

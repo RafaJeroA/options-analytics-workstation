@@ -64,6 +64,7 @@ export function ScenarioGrid({
     [selectedPoints]
   );
   const selectedDayState = scenario?.day_states.find((state) => state.days_forward === selectedDay);
+  const conditionalSettlement = scenario?.conditional_settlement === true;
   const volatilityDimensionMuted = selectedDayState?.volatility_shift_effective === false;
   const displayedShifts = useMemo(() => {
     if (!volatilityDimensionMuted || shifts.length <= 1) {
@@ -112,6 +113,14 @@ export function ScenarioGrid({
           {scenario.warnings.join(" ")}
         </div>
       ) : null}
+      {conditionalSettlement ? (
+        <div
+          className="mb-3 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-3 text-xs text-[var(--muted-foreground)]"
+          data-testid="scenario-conditional-notice"
+        >
+          Mixed-expiration scenario grid: conditional settlement illustration. The common scenario spot proxies each expired leg&apos;s settlement spot; this is not a global risk bound or a realized multi-expiration PnL path.
+        </div>
+      ) : null}
       {loading && !points.length ? (
         <DataState message="Loading analytics..." tone="loading" />
       ) : !hasStrategy ? (
@@ -145,7 +154,9 @@ export function ScenarioGrid({
                 {displayedShifts.map((shift) => (
                   <th key={shift}>
                     {volatilityDimensionMuted
-                      ? selectedDayState?.expiration_state === "at_or_after_expiry"
+                      ? conditionalSettlement
+                        ? "Conditional settlement"
+                        : selectedDayState?.expiration_state === "at_or_after_expiry"
                         ? "Expiry payoff"
                         : "No vol effect"
                       : formatSignedPercent(shift * 100, 0)}

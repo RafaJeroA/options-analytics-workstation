@@ -9,7 +9,7 @@ This document defines the scope of the v0.1 research beta. Options Analytics Wor
 - Discrete dividend dates and amounts are not modeled. A continuous yield is only an approximation and can be materially inadequate around ex-dividend dates.
 - Volatility is treated as an input per scenario point; the engine does not implement a dynamic volatility surface, stochastic volatility, jumps, or path dependence.
 - Local Greeks are analytical Black–Scholes sensitivities, not broker risk, exchange risk arrays, or portfolio Greeks.
-- Expiry payoff metrics intentionally exclude commissions, fees, taxes, slippage, borrow costs, margin, assignment, and exercise mechanics.
+- Exact single-spot expiry payoff metrics are supported when stock and option legs share one expiration. Mixed-expiration strategies retain per-leg valuation and conditional scenario analysis, but global payoff bounds, breakevens, and the exact payoff chart are unavailable because settlement spots can differ. These metrics also exclude commissions, fees, taxes, slippage, borrow costs, margin, assignment, and exercise mechanics.
 - The scenario grid is deterministic and illustrative. It is not a probability forecast, backtest, or investment-performance estimate.
 - Mixed-expiration scenarios use a static-shock convention: every already-expired option settles to intrinsic value at the scenario spot, then the settled cash is carried to the horizon at the configured continuously compounded risk-free rate. The engine does not simulate the path or historical settlement spot between leg expirations.
 

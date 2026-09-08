@@ -22,7 +22,12 @@ from app.models.strategy import (
     StrategyValuation,
 )
 from app.quant.black_scholes import black_scholes_price, intrinsic_value
-from app.quant.payoff import analyze_expiry_payoff, payoff_at_expiry
+from app.quant.payoff import (
+    EXACT_PAYOFF_UNAVAILABLE_REASON,
+    analyze_expiry_payoff,
+    has_multiple_option_expirations,
+    payoff_at_expiry,
+)
 
 
 def _signed_quantity(leg: StrategyLeg) -> int:
@@ -222,7 +227,33 @@ def _scenario_expiration_state(
     return ScenarioExpirationState.PRE_EXPIRY
 
 
-def _scenario_day_message(state: ScenarioExpirationState, volatility_effective: bool | None) -> str | None:
+def _scenario_day_message(
+    state: ScenarioExpirationState,
+    volatility_effective: bool | None,
+    *,
+    conditional_settlement: bool = False,
+) -> str | None:
+    if conditional_settlement and state == ScenarioExpirationState.PRE_EXPIRY:
+        return (
+            "Mixed expirations: this is a conditional scenario illustration, not a global risk bound "
+            "or a realized multi-expiration PnL path. The common scenario spot is a proxy for each "
+            "expired leg's settlement spot."
+        )
+    if conditional_settlement and state == ScenarioExpirationState.MIXED:
+        return (
+            "Mixed expirations: conditional settlement illustration. Expired legs use intrinsic "
+            "settlement at the common scenario spot and are carried to the scenario date at the "
+            "risk-free rate; unexpired legs retain time value. The common scenario spot is a proxy "
+            "for each expired leg's settlement spot, not a global risk bound or a realized "
+            "multi-expiration PnL path."
+        )
+    if conditional_settlement and state == ScenarioExpirationState.AT_OR_AFTER_EXPIRY:
+        return (
+            "Mixed expirations after final expiry: conditional settlement illustration. All legs are "
+            "at or after expiry and settled cash is carried to the scenario date at the risk-free rate "
+            "using the common scenario spot as a proxy for each leg's settlement spot; this is not a "
+            "global risk bound or a realized multi-expiration PnL path."
+        )
     if state == ScenarioExpirationState.AT_OR_AFTER_EXPIRY:
         return (
             "At or after expiry: values reflect expiry payoff; volatility shifts have no effect. "
@@ -304,7 +335,12 @@ def value_strategy(strategy: StrategyDefinition, assumptions: PricingAssumptions
     max_loss_state = PayoffMetricState.UNAVAILABLE
     breakevens: list[float] = []
     breakeven_intervals: list[BreakevenInterval] = []
-    if entry_cost is not None:
+    payoff_unavailable_reason: str | None = None
+    exact_payoff_available = not has_multiple_option_expirations(strategy)
+    if not exact_payoff_available:
+        payoff_unavailable_reason = EXACT_PAYOFF_UNAVAILABLE_REASON
+        warnings.append(payoff_unavailable_reason)
+    if entry_cost is not None and exact_payoff_available:
         analysis = analyze_expiry_payoff(strategy)
         max_profit = analysis.max_profit
         max_loss = analysis.max_loss
@@ -320,7 +356,7 @@ def value_strategy(strategy: StrategyDefinition, assumptions: PricingAssumptions
             warnings.append("Payoff chart is unavailable because the valuation grid is empty.")
         else:
             payoff = [PayoffPoint(spot=spot, value=payoff_at_expiry(strategy, spot)) for spot in grid]
-    elif strategy.legs:
+    elif entry_cost is None and strategy.legs:
         warnings.append(
             "Payoff analysis is unavailable because one or more legs have no usable entry premium."
         )
@@ -359,6 +395,7 @@ def value_strategy(strategy: StrategyDefinition, assumptions: PricingAssumptions
         max_loss=max_loss,
         max_profit_state=max_profit_state,
         max_loss_state=max_loss_state,
+        payoff_unavailable_reason=payoff_unavailable_reason,
         breakevens=breakevens,
         breakeven_intervals=breakeven_intervals,
         payoff=payoff,
@@ -372,6 +409,7 @@ def value_strategy(strategy: StrategyDefinition, assumptions: PricingAssumptions
 def build_scenario_grid(strategy: StrategyDefinition, scenario: ScenarioInput) -> ScenarioGridResult:
     points: list[ScenarioPoint] = []
     warnings: list[str] = []
+    conditional_settlement = has_multiple_option_expirations(strategy)
     base_price = strategy.underlying_price
     base_assumptions = PricingAssumptions(
         valuation_date=scenario.valuation_date,
@@ -391,6 +429,7 @@ def build_scenario_grid(strategy: StrategyDefinition, scenario: ScenarioInput) -
             status_message="Scenario grid unavailable: one or more legs have no usable implied volatility.",
             warnings=base_value.warnings,
             volatility_shift_effective=None,
+            conditional_settlement=conditional_settlement,
         )
 
     if base_value.entry_cost is None:
@@ -403,6 +442,7 @@ def build_scenario_grid(strategy: StrategyDefinition, scenario: ScenarioInput) -
             status_message="Scenario grid unavailable: one or more legs have no usable entry premium.",
             warnings=base_value.warnings,
             volatility_shift_effective=None,
+            conditional_settlement=conditional_settlement,
         )
 
     for days_forward in scenario.days_forward:
@@ -444,7 +484,11 @@ def build_scenario_grid(strategy: StrategyDefinition, scenario: ScenarioInput) -
                 days_forward=days_forward,
                 expiration_state=expiration_state,
                 volatility_shift_effective=day_volatility_effective,
-                message=_scenario_day_message(expiration_state, day_volatility_effective),
+                message=_scenario_day_message(
+                    expiration_state,
+                    day_volatility_effective,
+                    conditional_settlement=conditional_settlement,
+                ),
             )
         )
 
@@ -468,4 +512,5 @@ def build_scenario_grid(strategy: StrategyDefinition, scenario: ScenarioInput) -
         warnings=warnings,
         volatility_shift_effective=volatility_shift_effective,
         day_states=day_states,
+        conditional_settlement=conditional_settlement,
     )

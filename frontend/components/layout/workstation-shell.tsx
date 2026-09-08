@@ -17,7 +17,11 @@ import { useMarketStreams } from "@/hooks/use-market-streams";
 import { useWorkstationStore } from "@/hooks/use-workstation-store";
 import { api, apiErrorLabel, apiErrorMessage, isRetryableApiError } from "@/lib/api";
 import { formatMarketDataMode, formatPrice, formatSignedPercent, isFiniteNumber } from "@/lib/format";
-import { getStagedOptionEntryPrice } from "@/lib/strategy-pricing";
+import {
+  hasMultipleOptionExpirations,
+  MIXED_EXPIRATION_PAYOFF_REASON,
+  getStagedOptionEntryPrice,
+} from "@/lib/strategy-pricing";
 import { buildTemplate } from "@/lib/strategy-templates";
 
 export function WorkstationShell() {
@@ -129,6 +133,10 @@ export function WorkstationShell() {
     () => JSON.stringify({ strategy: debouncedPricedStrategy, assumptions: debouncedPricingAssumptions }),
     [debouncedPricedStrategy, debouncedPricingAssumptions]
   );
+  const currentStrategyValuationKey = useMemo(
+    () => JSON.stringify({ strategy: pricedStrategy, assumptions: pricingAssumptions }),
+    [pricedStrategy, pricingAssumptions]
+  );
   const scenarioInput = useMemo(
     () => ({
       underlying_moves_pct: [-0.2, -0.1, -0.05, 0, 0.05, 0.1, 0.2],
@@ -153,6 +161,31 @@ export function WorkstationShell() {
   const scenarioGridKey = useMemo(
     () => JSON.stringify({ strategy: debouncedPricedStrategy, scenario: scenarioInput }),
     [debouncedPricedStrategy, scenarioInput]
+  );
+  const currentScenarioInput = useMemo(
+    () => ({
+      underlying_moves_pct: [-0.2, -0.1, -0.05, 0, 0.05, 0.1, 0.2],
+      implied_vol_shifts: [-0.1, -0.05, 0, 0.05, 0.1],
+      days_forward: [
+        pricingAssumptions.days_forward,
+        pricingAssumptions.days_forward + 7,
+        pricingAssumptions.days_forward + 14,
+        pricingAssumptions.days_forward + 30,
+      ],
+      valuation_date: pricingAssumptions.valuation_date,
+      risk_free_rate: pricingAssumptions.risk_free_rate,
+      dividend_yield: pricingAssumptions.dividend_yield,
+    }),
+    [
+      pricingAssumptions.days_forward,
+      pricingAssumptions.dividend_yield,
+      pricingAssumptions.risk_free_rate,
+      pricingAssumptions.valuation_date,
+    ]
+  );
+  const currentScenarioGridKey = useMemo(
+    () => JSON.stringify({ strategy: pricedStrategy, scenario: currentScenarioInput }),
+    [currentScenarioInput, pricedStrategy]
   );
 
   const skewQuery = useQuery({
@@ -182,10 +215,15 @@ export function WorkstationShell() {
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
+  const valuationRequestIsCurrent =
+    strategyValuationKey === currentStrategyValuationKey && !strategyValuationQuery.isPlaceholderData;
+  const displayedValuation =
+    valuationRequestIsCurrent && !strategyValuationQuery.error ? strategyValuationQuery.data : undefined;
   const pricingLoading =
     (hasStagedStrategy && !debouncedPricingReady) ||
     strategyValuationQuery.isLoading ||
-    strategyValuationQuery.isFetching;
+    strategyValuationQuery.isFetching ||
+    (hasStagedStrategy && debouncedPricingReady && !valuationRequestIsCurrent);
 
   const scenarioGridQuery = useQuery({
     queryKey: ["scenario-grid", scenarioGridKey],
@@ -198,6 +236,10 @@ export function WorkstationShell() {
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
+  const scenarioRequestIsCurrent =
+    scenarioGridKey === currentScenarioGridKey && !scenarioGridQuery.isPlaceholderData;
+  const displayedScenario =
+    scenarioRequestIsCurrent && !scenarioGridQuery.error ? scenarioGridQuery.data : undefined;
 
   const addWatchlistMutation = useMutation({
     mutationFn: (watchSymbol: string) => api.addWatchlist(watchSymbol),
@@ -394,11 +436,16 @@ export function WorkstationShell() {
                   chain={activeChain}
                   selectedContract={activeSelectedContract}
                   strategy={pricedStrategy}
-                  valuation={strategyValuationQuery.data}
-                   valuationLoading={pricingLoading}
-                   valuationError={valuationErrorMessage}
-                   valuationRetryable={isRetryableApiError(strategyValuationQuery.error)}
-                   onRetryValuation={() => void strategyValuationQuery.refetch()}
+                  valuation={displayedValuation}
+                  valuationLoading={pricingLoading}
+                  valuationError={valuationErrorMessage}
+                  valuationRetryable={isRetryableApiError(strategyValuationQuery.error)}
+                  onRetryValuation={() => void strategyValuationQuery.refetch()}
+                  payoffUnavailableReason={
+                    hasMultipleOptionExpirations(pricedStrategy)
+                      ? MIXED_EXPIRATION_PAYOFF_REASON
+                      : undefined
+                  }
                   onTemplateSelect={(template) => {
                     if (!activeChain) return;
                     const legs = buildTemplate(activeChain, template, activeSelectedContract);
@@ -432,11 +479,15 @@ export function WorkstationShell() {
                 <VolatilityPanel
                   skew={skewQuery.data ?? []}
                   termStructure={termStructureQuery.data ?? []}
-                  scenario={scenarioGridQuery.data}
+                  scenario={displayedScenario}
                   skewLoading={skewQuery.isLoading || skewQuery.isFetching}
                   termStructureLoading={termStructureQuery.isLoading || termStructureQuery.isFetching}
                   scenarioLoading={
-                    (hasStagedStrategy && !debouncedPricingReady) || scenarioGridQuery.isLoading || scenarioGridQuery.isFetching
+                    (hasStagedStrategy && !debouncedPricingReady) ||
+                    (analyticsEnabled &&
+                      (scenarioGridQuery.isLoading ||
+                        scenarioGridQuery.isFetching ||
+                        (debouncedPricingReady && !scenarioRequestIsCurrent)))
                   }
                    hasStrategy={hasStagedStrategy}
                    scenarioError={scenarioErrorMessage}
@@ -455,10 +506,13 @@ export function WorkstationShell() {
             summary={activeSummary}
             selectedContract={activeSelectedContract}
             assumptions={assumptions}
-            valuation={strategyValuationQuery.data}
+            valuation={displayedValuation}
             valuationLoading={pricingLoading}
             hasStrategy={hasStagedStrategy}
             stagedLegCount={strategy.legs.length}
+            payoffUnavailableReason={
+              hasMultipleOptionExpirations(pricedStrategy) ? MIXED_EXPIRATION_PAYOFF_REASON : undefined
+            }
             onUpdateAssumptions={updateAssumptions}
             onAddSelectedLong={() => {
               if (!activeSelectedContract) return;

@@ -8,7 +8,7 @@ import { StrategySummary } from "@/components/strategy/strategy-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatPrice, formatQuoteSource } from "@/lib/format";
-import { payoffMetricsAvailable } from "@/lib/strategy-pricing";
+import { payoffExplanation, payoffMetricsAvailable } from "@/lib/strategy-pricing";
 import { buildTemplate } from "@/lib/strategy-templates";
 import type {
   ChainSnapshot,
@@ -56,6 +56,7 @@ interface StrategyBuilderProps {
   onLoadStrategy: (record: SavedStrategyRecord) => void;
   onDeleteStrategy: (strategyId: string) => void;
   onRetrySavedStrategies: () => void;
+  payoffUnavailableReason?: string;
 }
 
 export function StrategyBuilder({
@@ -82,11 +83,14 @@ export function StrategyBuilder({
   onLoadStrategy,
   onDeleteStrategy,
   onRetrySavedStrategies,
+  payoffUnavailableReason,
 }: StrategyBuilderProps) {
   const activeValuation = strategy.legs.length ? valuation : undefined;
+  const payoffExplanationText =
+    payoffExplanation(activeValuation, payoffUnavailableReason) ?? valuationError;
   const payoffEmptyMessage = !strategy.legs.length
     ? "Stage a strategy to view payoff."
-    : activeValuation?.status_message ??
+    : payoffExplanationText ??
       (payoffMetricsAvailable(activeValuation)
         ? "Payoff is unavailable for the current strategy."
         : "Payoff unavailable: one or more legs have no usable entry premium.");
@@ -200,6 +204,7 @@ export function StrategyBuilder({
           errorMessage={valuationError}
           retryable={valuationRetryable}
           onRetry={onRetryValuation}
+          payoffUnavailableReason={payoffUnavailableReason}
         />
         <StrategyPayoffChart
           payoff={activeValuation?.payoff ?? []}

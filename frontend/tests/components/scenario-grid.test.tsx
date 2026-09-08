@@ -89,6 +89,31 @@ test("at-expiry volatility columns collapse and explain why", () => {
   expect(screen.queryByText("+10%")).not.toBeInTheDocument();
 });
 
+test("mixed-expiration post-expiry columns use a conditional settlement label", () => {
+  const mixedPostExpiry: ScenarioGridResult = {
+    ...scenario,
+    points: [point(30, -0.1, 200), point(30, 0, 200), point(30, 0.1, 200)],
+    conditional_settlement: true,
+    day_states: [
+      {
+        days_forward: 30,
+        expiration_state: "at_or_after_expiry",
+        volatility_shift_effective: false,
+        message:
+          "Mixed expirations after final expiry: conditional settlement illustration. All legs are at or after expiry and settled cash is carried to the scenario date at the risk-free rate using the common scenario spot as a proxy for each leg's settlement spot; this is not a global risk bound or a realized multi-expiration PnL path.",
+      },
+    ],
+  };
+  render(<ScenarioGrid scenario={mixedPostExpiry} hasStrategy />);
+
+  expect(screen.getByTestId("scenario-conditional-notice")).toHaveTextContent(
+    "conditional settlement illustration"
+  );
+  expect(screen.getByRole("columnheader", { name: "Conditional settlement" })).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Expiry payoff" })).not.toBeInTheDocument();
+  expect(screen.getByTestId("scenario-day-state")).toHaveTextContent("not a global risk bound");
+});
+
 test("mixed-expiration tabs preserve their settlement explanation", () => {
   const mixed = {
     ...scenario,

@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
 import { formatNumber, formatPayoffMetric, isFiniteNumber } from "@/lib/format";
+import { payoffExplanation } from "@/lib/strategy-pricing";
 import type { StrategyValuation } from "@/lib/types";
 
 interface StrategySummaryProps {
@@ -10,6 +11,7 @@ interface StrategySummaryProps {
   errorMessage?: string;
   retryable?: boolean;
   onRetry?: () => void;
+  payoffUnavailableReason?: string;
 }
 
 export function StrategySummary({
@@ -19,6 +21,7 @@ export function StrategySummary({
   errorMessage,
   retryable = false,
   onRetry,
+  payoffUnavailableReason,
 }: StrategySummaryProps) {
   const maxProfitLabel = valuation
     ? formatPayoffMetric(valuation.max_profit, valuation.max_profit_state)
@@ -39,6 +42,7 @@ export function StrategySummary({
           ? "Unavailable"
           : "None"
     : "--";
+  const explanation = payoffExplanation(valuation, payoffUnavailableReason);
 
   return (
     <Card>
@@ -92,9 +96,9 @@ export function StrategySummary({
               <div className="metric-label">Breakevens</div>
               <div className="metric-value">{breakevenLabel}</div>
             </div>
-            {valuation.status_message ? (
+            {explanation ? (
               <div className="col-span-2 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-strong)] p-3 text-xs text-[var(--muted-foreground)]">
-                {valuation.status_message}
+                {explanation}
               </div>
             ) : null}
           </>

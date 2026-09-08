@@ -118,6 +118,7 @@ class StrategyValuation(BaseModel):
     max_loss: FiniteFloat | None = None
     max_profit_state: PayoffMetricState = PayoffMetricState.UNAVAILABLE
     max_loss_state: PayoffMetricState = PayoffMetricState.UNAVAILABLE
+    payoff_unavailable_reason: str | None = None
     breakevens: list[NonNegativeFiniteFloat] = Field(default_factory=list)
     breakeven_intervals: list[BreakevenInterval] = Field(default_factory=list)
     payoff: list[PayoffPoint] = Field(default_factory=list)

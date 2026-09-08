@@ -7,7 +7,7 @@ import pytest
 from app.models.analytics import PricingAssumptions
 from app.models.market import InstrumentType, OptionContract, OptionQuote, OptionRight
 from app.models.strategy import PayoffMetricState, StrategyDefinition, StrategyLeg
-from app.quant.payoff import analyze_expiry_payoff
+from app.quant.payoff import analyze_expiry_payoff, payoff_at_expiry
 from app.quant.strategy import value_strategy
 
 
@@ -20,11 +20,12 @@ def option_leg(
     *,
     quantity: int = 1,
     multiplier: int = 100,
+    expiration: date | None = None,
 ) -> StrategyLeg:
     contract = OptionContract(
-        contract_id=f"TEST-2026-12-18-{strike:.2f}-{right.value[0].upper()}-{leg_id}",
+        contract_id=f"TEST-{expiration or date.today() + timedelta(days=90)}-{strike:.2f}-{right.value[0].upper()}-{leg_id}",
         symbol="TEST",
-        expiration=date.today() + timedelta(days=90),
+        expiration=expiration or date.today() + timedelta(days=90),
         strike=strike,
         right=right,
         multiplier=multiplier,
@@ -268,6 +269,46 @@ def test_distant_strike_metrics_are_independent_of_chart_interval() -> None:
     assert result.max_profit is None
     assert result.max_profit_state == PayoffMetricState.UNLIMITED
     assert result.max_loss == -100
+
+
+def test_mixed_expiration_calendar_does_not_collapse_to_a_common_spot() -> None:
+    strategy = StrategyDefinition(
+        name="same-strike call calendar",
+        underlying_symbol="TEST",
+        underlying_price=100,
+        legs=[
+            option_leg(
+                "near-short",
+                OptionRight.CALL,
+                "short",
+                100,
+                5,
+                expiration=date(2026, 2, 1),
+            ),
+            option_leg(
+                "far-long",
+                OptionRight.CALL,
+                "long",
+                100,
+                7,
+                expiration=date(2026, 3, 1),
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="multiple option expirations"):
+        payoff_at_expiry(strategy, 100)
+    with pytest.raises(ValueError, match="multiple option expirations"):
+        analyze_expiry_payoff(strategy)
+
+    result = valuation("same-strike call calendar", strategy.legs)
+    assert result.max_profit is None
+    assert result.max_loss is None
+    assert result.max_profit_state == PayoffMetricState.UNAVAILABLE
+    assert result.max_loss_state == PayoffMetricState.UNAVAILABLE
+    assert result.breakevens == []
+    assert result.breakeven_intervals == []
+    assert result.payoff == []
 
 
 def test_mixed_quantity_and_multiplier_scale_cash_risk_without_changing_breakeven() -> None:
