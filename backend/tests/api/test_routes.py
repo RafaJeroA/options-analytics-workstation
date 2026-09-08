@@ -1,5 +1,6 @@
 import pytest
 
+from app.quant.payoff import EXACT_PAYOFF_UNAVAILABLE_REASON
 from app.services.adapters.base import AdapterUnavailableError, UnknownContractError
 from app.services.market_service import get_market_service
 
@@ -66,6 +67,146 @@ def test_strategy_price_route_accepts_explicit_underlying_price_assumption(clien
     payload = response.json()
     assert payload["assumptions"]["underlying_price"] == chain["underlying"]["spot"]
     assert payload["underlying_symbol"] == "SPY"
+
+
+def _mixed_strategy_payload(client) -> dict[str, object]:
+    chain_response = client.get("/underlyings/SPY/chains")
+    assert chain_response.status_code == 200
+    first_chain = chain_response.json()
+    second_expiration = first_chain["expirations"][1]
+    second_response = client.get("/underlyings/SPY/chains", params={"expiration": second_expiration})
+    assert second_response.status_code == 200
+    second_chain = second_response.json()
+    first_call = next(
+        call
+        for call in first_chain["calls"]
+        if call["mark"] is not None and call["mark"] > 0 and call["implied_vol"] is not None
+    )
+    second_call = next(
+        call
+        for call in second_chain["calls"]
+        if call["contract"]["strike"] == first_call["contract"]["strike"]
+        and call["mark"] is not None
+        and call["mark"] > 0
+        and call["implied_vol"] is not None
+    )
+    spot = first_chain["underlying"]["spot"]
+    return {
+        "name": "Mixed Call Calendar",
+        "underlying_symbol": "SPY",
+        "underlying_price": spot,
+        "legs": [
+            {
+                "leg_id": "near",
+                "instrument_type": "option",
+                "side": "short",
+                "quantity": 1,
+                "contract": first_call["contract"],
+                "quote": first_call,
+                "entry_price": first_call["mark"],
+            },
+            {
+                "leg_id": "far",
+                "instrument_type": "option",
+                "side": "long",
+                "quantity": 1,
+                "contract": second_call["contract"],
+                "quote": second_call,
+                "entry_price": second_call["mark"],
+            },
+        ],
+    }
+
+
+def test_strategy_price_route_returns_unavailable_exact_metrics_for_mixed_expirations(client) -> None:
+    strategy = _mixed_strategy_payload(client)
+    response = client.post(
+        "/strategies/price",
+        json={
+            "strategy": strategy,
+            "assumptions": {
+                "valuation_date": "2026-07-31",
+                "underlying_price": strategy["underlying_price"],
+                "risk_free_rate": 0.03,
+                "dividend_yield": 0.01,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["entry_cost"] is not None
+    assert payload["current_value"] is not None
+    assert payload["theoretical_value"] is not None
+    assert payload["pnl_open"] is not None
+    assert payload["max_profit"] is None
+    assert payload["max_loss"] is None
+    assert payload["max_profit_state"] == "unavailable"
+    assert payload["max_loss_state"] == "unavailable"
+    assert payload["breakevens"] == []
+    assert payload["breakeven_intervals"] == []
+    assert payload["payoff"] == []
+    assert payload["payoff_unavailable_reason"] == EXACT_PAYOFF_UNAVAILABLE_REASON
+    assert payload["pricing_state"] == "partial"
+    assert EXACT_PAYOFF_UNAVAILABLE_REASON in payload["warnings"]
+
+
+def test_mixed_expiration_scenario_route_keeps_conditional_values_and_serialization(client) -> None:
+    strategy = _mixed_strategy_payload(client)
+    response = client.post(
+        "/strategies/scenario-grid",
+        json={
+            "strategy": strategy,
+            "scenario": {
+                "valuation_date": "2026-07-31",
+                "underlying_moves_pct": [0.0],
+                "implied_vol_shifts": [0.0],
+                "days_forward": [0, 7, 30],
+                "risk_free_rate": 0.03,
+                "dividend_yield": 0.01,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["conditional_settlement"] is True
+    assert len(payload["points"]) == 3
+    assert all(point["theoretical_value"] is not None for point in payload["points"])
+    states = {state["days_forward"]: state for state in payload["day_states"]}
+    assert states[0]["expiration_state"] == "pre_expiry"
+    assert states[7]["expiration_state"] == "mixed"
+    assert states[30]["expiration_state"] == "at_or_after_expiry"
+    assert "conditional settlement illustration" in states[7]["message"]
+    assert "not a global risk bound" in states[30]["message"]
+
+
+def test_mixed_expiration_missing_entry_keeps_model_and_input_explanations(client) -> None:
+    strategy = _mixed_strategy_payload(client)
+    strategy["legs"][1]["entry_price"] = None
+    response = client.post(
+        "/strategies/price",
+        json={
+            "strategy": strategy,
+            "assumptions": {
+                "valuation_date": "2026-07-31",
+                "underlying_price": strategy["underlying_price"],
+                "risk_free_rate": 0.03,
+                "dividend_yield": 0.01,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["pricing_state"] == "partial"
+    assert (
+        payload["status_message"]
+        == "Strategy pricing incomplete: one or more legs have no usable entry premium."
+    )
+    assert payload["payoff_unavailable_reason"] == EXACT_PAYOFF_UNAVAILABLE_REASON
+    assert any("settlement spots can differ" in warning for warning in payload["warnings"])
+    assert any("Entry premium is unavailable" in warning for warning in payload["warnings"])
 
 
 def test_strategy_price_route_returns_controlled_result_for_unpriced_strategy(client) -> None:

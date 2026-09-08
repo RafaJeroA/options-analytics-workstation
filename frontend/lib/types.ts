@@ -207,6 +207,7 @@ export interface StrategyValuation {
   max_loss: number | null;
   max_profit_state: PayoffMetricState;
   max_loss_state: PayoffMetricState;
+  payoff_unavailable_reason?: string | null;
   breakevens: number[];
   breakeven_intervals: Array<{ start: number; end: number | null }>;
   payoff: PayoffPoint[];
@@ -270,4 +271,5 @@ export interface ScenarioGridResult {
   warnings: string[];
   volatility_shift_effective: boolean | null;
   day_states: ScenarioDayState[];
+  conditional_settlement?: boolean;
 }

@@ -14,7 +14,7 @@ The main supported mode uses deterministic synthetic market data, so the full ap
 - Prices European calls and puts and calculates Delta, Gamma, Theta, Vega and Rho.
 - Solves implied volatility subject to theoretical option-price bounds.
 - Builds single-leg and multi-leg strategies.
-- Calculates exact expiry payoffs, breakevens, maximum profit and maximum loss.
+- Calculates exact single-spot expiry payoffs, breakevens, maximum profit and maximum loss for stock and option legs sharing one expiration; mixed-expiration strategies retain valuation and conditional scenario analysis without those global payoff metrics.
 - Runs spot, volatility and time-to-expiry scenarios.
 - Saves and reloads strategies locally.
 - Keeps broker quotes, broker model values and local calculations separate.
@@ -26,7 +26,7 @@ The local model is European Black-Scholes with continuous dividend yield and con
 
 Many listed US equity and ETF options are American-style. Early exercise and discrete dividends are not fully represented, so local values can differ from broker values and market prices.
 
-Expiry-payoff calculations are exact for the represented option cash flows, but they exclude commissions, taxes, margin, borrow costs, assignment and exercise mechanics.
+Exact single-spot expiry-payoff calculations are supported for represented stock and option cash flows sharing one expiration. Mixed-expiration strategies retain their per-leg valuation and conditional scenario grid, but global payoff bounds, breakevens and the exact payoff chart are unavailable because settlement spots can differ. Payoff calculations exclude commissions, taxes, margin, borrow costs, assignment and exercise mechanics.
 
 The full modelling and market-data limits are documented in [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 

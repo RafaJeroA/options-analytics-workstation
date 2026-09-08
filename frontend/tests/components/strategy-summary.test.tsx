@@ -77,3 +77,44 @@ test("strategy summary trusts explicit unlimited states and never renders non-fi
   expect(screen.getByText("-$100.00")).toBeInTheDocument();
   expect(screen.queryByText(/NaN|Infinity/)).not.toBeInTheDocument();
 });
+
+test("strategy summary renders unavailable mixed-expiration payoff metrics with their reason", () => {
+  const reason =
+    "Exact single-spot expiry payoff, global bounds, and breakevens are unavailable for multiple option expirations because settlement spots can differ.";
+  render(
+    <StrategySummary
+      valuation={{
+        strategy_name: "Call Calendar",
+        underlying_symbol: "SPY",
+        assumptions: {
+          underlying_price: 500,
+          risk_free_rate: 0.04,
+          dividend_yield: 0,
+          volatility_shift: 0,
+          days_forward: 0,
+        },
+        net_debit_credit: -200,
+        entry_cost: 200,
+        current_value: 240,
+        theoretical_value: 230,
+        pnl_open: 40,
+        max_profit: null,
+        max_loss: null,
+        max_profit_state: "unavailable",
+        max_loss_state: "unavailable",
+        payoff_unavailable_reason: reason,
+        breakevens: [],
+        breakeven_intervals: [],
+        payoff: [],
+        legs: [],
+        pricing_state: "partial",
+        status_message: reason,
+        warnings: [reason],
+      }}
+    />
+  );
+
+  expect(screen.getAllByText("Unavailable")).toHaveLength(3);
+  expect(screen.getAllByText(reason)).toHaveLength(1);
+  expect(screen.queryByText("None")).not.toBeInTheDocument();
+});

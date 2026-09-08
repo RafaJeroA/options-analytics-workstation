@@ -16,9 +16,10 @@ def _call_leg(
     entry_price: float,
     *,
     expiration: date | None = None,
+    leg_id: str | None = None,
 ) -> StrategyLeg:
     contract = OptionContract(
-        contract_id=f"TEST-{strike}-C",
+        contract_id=f"TEST-{expiration or date.today() + timedelta(days=30)}-{strike}-{leg_id or side}-C",
         symbol="TEST",
         expiration=expiration or date.today() + timedelta(days=30),
         strike=strike,
@@ -34,7 +35,44 @@ def _call_leg(
         updated_at=datetime.now(timezone.utc),
     )
     return StrategyLeg(
-        leg_id=f"leg-{strike}", side=side, contract=contract, quote=quote, entry_price=entry_price
+        leg_id=leg_id or f"leg-{strike}",
+        side=side,
+        contract=contract,
+        quote=quote,
+        entry_price=entry_price,
+    )
+
+
+def _put_leg(
+    side: str,
+    strike: float,
+    entry_price: float,
+    *,
+    expiration: date,
+    leg_id: str,
+) -> StrategyLeg:
+    contract = OptionContract(
+        contract_id=f"TEST-{expiration}-{strike}-{leg_id}-P",
+        symbol="TEST",
+        expiration=expiration,
+        strike=strike,
+        right=OptionRight.PUT,
+    )
+    quote = OptionQuote(
+        contract=contract,
+        bid=entry_price - 0.1,
+        ask=entry_price + 0.1,
+        last=entry_price,
+        mark=entry_price,
+        implied_vol=0.24,
+        updated_at=datetime.now(timezone.utc),
+    )
+    return StrategyLeg(
+        leg_id=leg_id,
+        side=side,
+        contract=contract,
+        quote=quote,
+        entry_price=entry_price,
     )
 
 
@@ -248,4 +286,135 @@ def test_scenario_grid_mixed_expirations_settles_only_expired_legs() -> None:
     assert states[21].volatility_shift_effective is False
     assert len({(point.days_forward, point.move_pct, point.vol_shift) for point in scenario.points}) == len(
         scenario.points
+    )
+    assert scenario.conditional_settlement is True
+    assert "conditional settlement illustration" in states[7].message
+    assert "not a global risk bound" in states[21].message
+
+
+@pytest.mark.parametrize(
+    "legs",
+    [
+        lambda: [
+            _call_leg("short", 100.0, 5.0, expiration=date(2026, 8, 7), leg_id="near"),
+            _call_leg("long", 105.0, 7.0, expiration=date(2026, 8, 14), leg_id="far"),
+        ],
+        lambda: [
+            _put_leg("short", 100.0, 5.0, expiration=date(2026, 8, 7), leg_id="near"),
+            _put_leg("long", 100.0, 7.0, expiration=date(2026, 8, 14), leg_id="far"),
+        ],
+    ],
+    ids=["diagonal", "put-calendar"],
+)
+def test_mixed_expiration_option_strategies_are_unavailable_for_exact_payoff(legs) -> None:
+    strategy = StrategyDefinition(
+        name="mixed options",
+        underlying_symbol="TEST",
+        underlying_price=100.0,
+        legs=legs(),
+    )
+
+    result = value_strategy(
+        strategy,
+        PricingAssumptions(underlying_price=100.0, valuation_date=date(2026, 8, 1)),
+    )
+
+    assert result.entry_cost is not None
+    assert result.current_value is not None
+    assert result.theoretical_value is not None
+    assert result.pnl_open is not None
+    assert result.max_profit is None
+    assert result.max_loss is None
+    assert result.max_profit_state.value == "unavailable"
+    assert result.max_loss_state.value == "unavailable"
+    assert result.breakevens == []
+    assert result.breakeven_intervals == []
+    assert result.payoff == []
+    assert result.payoff_unavailable_reason is not None
+    assert "settlement spots can differ" in result.payoff_unavailable_reason
+
+
+def test_mixed_expiration_eligibility_ignores_stock_legs_and_leg_order() -> None:
+    stock = StrategyLeg(
+        leg_id="stock",
+        instrument_type=InstrumentType.STOCK,
+        side="long",
+        quantity=100,
+        stock_price=100.0,
+        entry_price=100.0,
+        underlying_symbol="TEST",
+    )
+    near = _call_leg("short", 100.0, 5.0, expiration=date(2026, 8, 7), leg_id="near")
+    far = _call_leg("long", 100.0, 7.0, expiration=date(2026, 8, 14), leg_id="far")
+
+    results = []
+    for legs in ([stock, near, far], [far, stock, near]):
+        strategy = StrategyDefinition(
+            name="stock call calendar",
+            underlying_symbol="TEST",
+            underlying_price=100.0,
+            legs=legs,
+        )
+        results.append(
+            value_strategy(
+                strategy,
+                PricingAssumptions(underlying_price=100.0, valuation_date=date(2026, 8, 1)),
+            )
+        )
+
+    for result in results:
+        assert result.entry_cost is not None
+        assert result.current_value is not None
+        assert result.theoretical_value is not None
+        assert result.payoff == []
+        assert result.max_profit_state.value == "unavailable"
+        assert result.max_loss_state.value == "unavailable"
+    assert results[0].payoff_unavailable_reason == results[1].payoff_unavailable_reason
+
+
+@pytest.mark.parametrize("valuation_date", [date(2026, 8, 1), date(2026, 8, 10), date(2026, 9, 1)])
+def test_mixed_expiration_restriction_is_independent_of_valuation_date(valuation_date: date) -> None:
+    strategy = StrategyDefinition(
+        name="dated calendar",
+        underlying_symbol="TEST",
+        underlying_price=100.0,
+        legs=[
+            _call_leg("short", 100.0, 5.0, expiration=date(2026, 8, 7), leg_id="near"),
+            _call_leg("long", 100.0, 7.0, expiration=date(2026, 8, 14), leg_id="far"),
+        ],
+    )
+
+    result = value_strategy(
+        strategy, PricingAssumptions(underlying_price=100.0, valuation_date=valuation_date)
+    )
+
+    assert result.payoff == []
+    assert result.max_profit_state.value == "unavailable"
+    assert result.max_loss_state.value == "unavailable"
+
+
+def test_mixed_expiration_with_missing_entry_preserves_both_explanations() -> None:
+    missing_entry = _call_leg("long", 100.0, 7.0, expiration=date(2026, 8, 14), leg_id="far")
+    missing_entry.entry_price = None
+    strategy = StrategyDefinition(
+        name="partially specified calendar",
+        underlying_symbol="TEST",
+        underlying_price=100.0,
+        legs=[
+            _call_leg("short", 100.0, 5.0, expiration=date(2026, 8, 7), leg_id="near"),
+            missing_entry,
+        ],
+    )
+
+    result = value_strategy(
+        strategy,
+        PricingAssumptions(underlying_price=100.0, valuation_date=date(2026, 8, 1)),
+    )
+
+    assert result.entry_cost is None
+    assert result.payoff_unavailable_reason is not None
+    assert any("settlement spots can differ" in warning for warning in result.warnings)
+    assert any("Entry premium is unavailable" in warning for warning in result.warnings)
+    assert (
+        result.status_message == "Strategy pricing incomplete: one or more legs have no usable entry premium."
     )

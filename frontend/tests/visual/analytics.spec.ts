@@ -9,6 +9,12 @@ interface ScenarioResponsePoint {
 
 interface ScenarioResponse {
   points: ScenarioResponsePoint[];
+  conditional_settlement: boolean;
+  day_states: Array<{
+    days_forward: number;
+    expiration_state: string;
+    message: string | null;
+  }>;
 }
 
 async function assertChartGeometry(card: Locator, minimumPoints: number) {
@@ -147,4 +153,81 @@ test("deterministic analytics workflow is finite, responsive, and expiry-aware",
   );
   expect(pageOverflow).toBeLessThanOrEqual(1);
   expect(consoleErrors).toEqual([]);
+});
+
+test("mixed-expiration strategies keep valuation and conditional settlement semantics", async ({ page }, testInfo) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "SPY", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "AAPL", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "AAPL", level: 1 })).toBeVisible();
+
+  await page.getByLabel("Expiration").selectOption("2026-08-14");
+  await page.locator('[data-contract-id="AAPL-2026-08-14-215.00-C"]').click();
+  await expect(page.getByText("AAPL 2026-08-14 215", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add Short", exact: true }).click();
+  await expect(page.getByText("1 leg staged", { exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Chain" }).click();
+  await page.getByLabel("Expiration").selectOption("2026-08-21");
+  await page.locator('[data-contract-id="AAPL-2026-08-21-215.00-C"]').click();
+  await expect(page.getByText("AAPL 2026-08-21 215", { exact: true })).toBeVisible();
+
+  const mixedPriceResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith("/strategies/price") && response.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: "Add Long", exact: true }).click();
+  await expect(page.getByText("2 legs staged", { exact: true })).toBeVisible();
+  const mixedPriceResponse = await mixedPriceResponsePromise;
+  const mixedPrice = await mixedPriceResponse.json();
+  expect(mixedPrice.max_profit).toBeNull();
+  expect(mixedPrice.max_loss).toBeNull();
+  expect(mixedPrice.max_profit_state).toBe("unavailable");
+  expect(mixedPrice.max_loss_state).toBe("unavailable");
+  expect(mixedPrice.breakevens).toEqual([]);
+  expect(mixedPrice.breakeven_intervals).toEqual([]);
+  expect(mixedPrice.payoff).toEqual([]);
+  expect(mixedPrice.payoff_unavailable_reason).toContain("settlement spots can differ");
+  expect(mixedPrice.entry_cost).not.toBeNull();
+  expect(mixedPrice.theoretical_value).not.toBeNull();
+
+  const reason = "Exact single-spot expiry payoff, global bounds, and breakevens are unavailable for multiple option expirations because settlement spots can differ.";
+  await expect(page.getByText(reason).first()).toBeVisible();
+  await expect(page.getByText("Unavailable").first()).toBeVisible();
+  await expect(page.getByText("Payoff unavailable", { exact: false })).toHaveCount(0);
+
+  const scenarioResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/strategies/scenario-grid") && response.request().method() === "POST"
+  );
+  await page.getByRole("tab", { name: "Analytics" }).click();
+  const scenarioResponse = await scenarioResponsePromise;
+  const scenario = (await scenarioResponse.json()) as ScenarioResponse;
+  expect(scenario.conditional_settlement).toBe(true);
+  expect(scenario.points.length).toBeGreaterThan(0);
+  expect(scenario.day_states.find((state) => state.days_forward === 14)?.expiration_state).toBe("mixed");
+  expect(scenario.day_states.find((state) => state.days_forward === 30)?.expiration_state).toBe("at_or_after_expiry");
+  expect(scenario.day_states.find((state) => state.days_forward === 30)?.message).toContain(
+    "not a global risk bound"
+  );
+
+  await expect(page.getByTestId("scenario-conditional-notice")).toBeVisible();
+  await page.getByRole("button", { name: "+14d", exact: true }).click();
+  await expect(page.getByTestId("scenario-day-state")).toContainText("conditional settlement illustration");
+  await page.getByRole("button", { name: "+30d", exact: true }).click();
+  await expect(page.getByRole("columnheader", { name: "Conditional settlement" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Expiry payoff" })).toHaveCount(0);
+  await expect(page.getByTestId("scenario-day-state")).toContainText("after final expiry");
+  await page.getByTestId("scenario-grid").screenshot({ path: testInfo.outputPath("scenario-mixed-final-expiry.png") });
+
+  await page.getByRole("tab", { name: "Strategy" }).click();
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const loadButtons = page.getByRole("button", { name: "Load Custom Strategy", exact: true });
+  await expect(loadButtons.last()).toBeVisible();
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await loadButtons.last().click();
+  await expect(page.getByText("2 legs staged", { exact: true })).toBeVisible();
+  await expect(page.getByText(reason).first()).toBeVisible();
+
+  await expect(page.locator("body")).not.toContainText(/NaN|Infinity|-Infinity/);
 });
